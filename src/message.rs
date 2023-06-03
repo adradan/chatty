@@ -8,6 +8,12 @@ pub enum Command {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+enum Status {
+    OK,
+    NotFound,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TextMessage {
     pub command: Command,
 }
@@ -22,15 +28,22 @@ impl TextMessage {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SessionMessage {
-    status: String,
+    status: Status,
     message: String,
 }
 
 impl SessionMessage {
     pub fn ok(msg: String) -> Self {
         SessionMessage {
-            status: "OK".to_string(),
-            message: msg.to_string(),
+            status: Status::OK,
+            message: msg,
+        }
+    }
+
+    pub fn no_recipient(msg: String) -> Self {
+        SessionMessage {
+            status: Status::NotFound,
+            message: msg,
         }
     }
 }

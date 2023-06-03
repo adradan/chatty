@@ -1,10 +1,27 @@
+use crate::server::MessageStatus::NewMessage;
 use actix::prelude::*;
 use rand::{self, rngs::ThreadRng, Rng};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::error::Error;
 
-#[derive(Message)]
+#[derive(Deserialize, Serialize, Debug)]
+pub enum MessageStatus {
+    NoRecipient,
+    UserJoined,
+    NewMessage,
+    MessageSent,
+    StartedSession,
+    Success,
+}
+
+#[derive(Message, Deserialize, Serialize, Debug)]
 #[rtype(result = "()")]
-pub struct Message(pub String);
+pub struct Message {
+    pub sender: usize,
+    pub message: String,
+    pub status: MessageStatus,
+}
 
 #[derive(Message)]
 #[rtype(usize)]
@@ -19,14 +36,14 @@ pub struct Disconnect {
 }
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), String>")]
 pub struct JoinDM {
     pub id: usize,
     pub recipient: usize,
 }
 
 #[derive(Message)]
-#[rtype(result = "()")]
+#[rtype(result = "Result<(), String>")]
 pub struct ClientMessage {
     pub id: usize,
     pub msg: String,
@@ -36,7 +53,6 @@ pub struct ClientMessage {
 #[derive(Debug)]
 pub struct ChatServer {
     sessions: HashMap<usize, Recipient<Message>>,
-    // chats: HashMap<usize, Vec<usize>>,
     rng: ThreadRng,
 }
 
@@ -48,10 +64,18 @@ impl ChatServer {
         }
     }
 
-    fn send_message(&self, recipient: usize, message: &str, sender: usize) {
+    fn send_message(&self, recipient: usize, message: &str, sender: usize, status: MessageStatus) {
         if let Some(r) = self.sessions.get(&recipient) {
-            r.do_send(Message(message.to_owned()));
+            r.do_send(Message {
+                sender,
+                message: message.to_owned(),
+                status,
+            });
         }
+    }
+
+    fn recipient_exists(&self, recipient: &usize) -> bool {
+        self.sessions.get(recipient).is_some()
     }
 }
 
@@ -66,7 +90,12 @@ impl Handler<Connect> for ChatServer {
     fn handle(&mut self, msg: Connect, _ctx: &mut Self::Context) -> Self::Result {
         let id = self.rng.gen::<usize>();
         self.sessions.insert(id, msg.addr);
-
+        self.send_message(
+            id.clone(),
+            "Session created.",
+            id.clone(),
+            MessageStatus::StartedSession,
+        );
         id
     }
 }
@@ -80,20 +109,30 @@ impl Handler<Disconnect> for ChatServer {
 }
 
 impl Handler<JoinDM> for ChatServer {
-    type Result = ();
+    type Result = Result<(), String>;
 
     fn handle(&mut self, msg: JoinDM, _ctx: &mut Self::Context) -> Self::Result {
         let JoinDM { id, recipient } = msg;
 
-        let message = format!("{id} has joined.");
-        self.send_message(recipient, message.as_str(), id);
+        if self.recipient_exists(&recipient) {
+            let message = format!("{id} has joined.");
+            self.send_message(recipient, message.as_str(), id, MessageStatus::UserJoined);
+            Ok(())
+        } else {
+            Err("Recipient not found.".to_string())
+        }
     }
 }
 
 impl Handler<ClientMessage> for ChatServer {
-    type Result = ();
+    type Result = Result<(), String>;
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Self::Context) -> Self::Result {
-        self.send_message(msg.recipient, msg.msg.as_str(), msg.id);
+        if self.recipient_exists(&msg.recipient) {
+            self.send_message(msg.recipient, msg.msg.as_str(), msg.id, NewMessage);
+            Ok(())
+        } else {
+            Err("Recipient no longer has a session.".to_string())
+        }
     }
 }
