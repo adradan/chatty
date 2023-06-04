@@ -1,32 +1,60 @@
-use crate::server::MessageStatus::NewMessage;
 use actix::prelude::*;
 use rand::{self, rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::error::Error;
 
 #[derive(Deserialize, Serialize, Debug)]
-pub enum MessageStatus {
+pub enum Command {
     NoRecipient,
-    UserJoined,
-    NewMessage,
+    ChatMessage,
+    ChatMessageSent,
     MessageSent,
     StartedSession,
+    Join,
+    InviteDM,
+    AcceptDM,
+    RejectDM,
     Success,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(untagged)]
+pub enum Message {
+    Join { recipient: usize },
+    InviteDM { inviter: usize, recipient: usize },
+    AcceptDM { inviter: usize, recipient: usize },
+    RejectDM { inviter: usize, recipient: usize },
+    ChatMessage { message: String },
+    NoRecipient { recipient: usize },
+    String(String),
+}
+
+impl From<String> for Message {
+    fn from(value: String) -> Self {
+        Message::ChatMessage { message: value }
+    }
 }
 
 #[derive(Message, Deserialize, Serialize, Debug)]
 #[rtype(result = "()")]
-pub struct Message {
+pub struct Session {
+    pub server_message: ServerMessage,
+    // ID of person they are DMing with
+    pub accepted_dm: usize,
+}
+
+#[derive(Message, Deserialize, Serialize, Debug)]
+#[rtype(result = "()")]
+pub struct ServerMessage {
     pub sender: usize,
-    pub message: String,
-    pub status: MessageStatus,
+    pub message: Message,
+    pub command: Command,
 }
 
 #[derive(Message)]
 #[rtype(usize)]
 pub struct Connect {
-    pub addr: Recipient<Message>,
+    pub addr: Recipient<ServerMessage>,
 }
 
 #[derive(Message)]
@@ -36,23 +64,44 @@ pub struct Disconnect {
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<(), String>")]
+#[rtype(result = "()")]
+pub struct InviteDM {
+    pub inviter: usize,
+    pub recipient: usize,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct AcceptDM {
+    pub inviter: usize,
+    pub recipient: usize,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct RejectDM {
+    pub inviter: usize,
+    pub recipient: usize,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
 pub struct JoinDM {
     pub id: usize,
     pub recipient: usize,
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<(), String>")]
+#[rtype(result = "()")]
 pub struct ClientMessage {
-    pub id: usize,
+    pub sender: usize,
     pub msg: String,
     pub recipient: usize,
 }
 
 #[derive(Debug)]
 pub struct ChatServer {
-    sessions: HashMap<usize, Recipient<Message>>,
+    sessions: HashMap<usize, Recipient<ServerMessage>>,
     rng: ThreadRng,
 }
 
@@ -64,18 +113,23 @@ impl ChatServer {
         }
     }
 
-    fn send_message(&self, recipient: usize, message: &str, sender: usize, status: MessageStatus) {
+    fn send_message(&self, recipient: usize, message: Message, sender: usize, command: Command) {
         if let Some(r) = self.sessions.get(&recipient) {
-            r.do_send(Message {
+            r.do_send(ServerMessage {
                 sender,
-                message: message.to_owned(),
-                status,
+                message,
+                command,
             });
         }
     }
 
     fn recipient_exists(&self, recipient: &usize) -> bool {
         self.sessions.get(recipient).is_some()
+    }
+
+    fn send_no_recipient(&self, sender: usize, recipient: usize) {
+        let message = Message::NoRecipient { recipient };
+        self.send_message(sender, message, sender, Command::NoRecipient);
     }
 }
 
@@ -91,10 +145,10 @@ impl Handler<Connect> for ChatServer {
         let id = self.rng.gen::<usize>();
         self.sessions.insert(id, msg.addr);
         self.send_message(
-            id.clone(),
-            "Session created.",
-            id.clone(),
-            MessageStatus::StartedSession,
+            id.to_owned(),
+            Message::String("Session created.".to_string()),
+            id.to_owned(),
+            Command::StartedSession,
         );
         id
     }
@@ -109,30 +163,97 @@ impl Handler<Disconnect> for ChatServer {
 }
 
 impl Handler<JoinDM> for ChatServer {
-    type Result = Result<(), String>;
+    // Inviter will send on being sent back the AcceptDM
+    // Recipient will send upon sending AcceptDM
+    type Result = ();
 
     fn handle(&mut self, msg: JoinDM, _ctx: &mut Self::Context) -> Self::Result {
         let JoinDM { id, recipient } = msg;
 
         if self.recipient_exists(&recipient) {
-            let message = format!("{id} has joined.");
-            self.send_message(recipient, message.as_str(), id, MessageStatus::UserJoined);
-            Ok(())
+            let message = Message::Join { recipient };
+            self.send_message(recipient, message, id, Command::Join);
+            self.send_message(
+                id,
+                Message::String("DM Created".to_string()),
+                id,
+                Command::Join,
+            );
         } else {
-            Err("Recipient not found.".to_string())
+            self.send_no_recipient(id, recipient);
+        }
+    }
+}
+
+impl Handler<InviteDM> for ChatServer {
+    // Comes from person that wants to invite someone to DM
+    type Result = ();
+
+    fn handle(&mut self, msg: InviteDM, ctx: &mut Self::Context) -> Self::Result {
+        let InviteDM { inviter, recipient } = msg;
+
+        if self.recipient_exists(&recipient) {
+            let message = Message::InviteDM { inviter, recipient };
+            self.send_message(recipient, message, inviter, Command::InviteDM);
+        } else {
+            self.send_no_recipient(inviter, recipient);
+        }
+    }
+}
+
+impl Handler<AcceptDM> for ChatServer {
+    // Comes from person that is invited
+    type Result = ();
+
+    fn handle(&mut self, msg: AcceptDM, _: &mut Self::Context) -> Self::Result {
+        let AcceptDM { inviter, recipient } = msg;
+
+        if self.recipient_exists(&recipient) {
+            let message = Message::AcceptDM { inviter, recipient };
+            self.send_message(inviter, message, recipient, Command::AcceptDM);
+        } else {
+            self.send_no_recipient(inviter, recipient);
+        }
+    }
+}
+
+impl Handler<RejectDM> for ChatServer {
+    // Comes from person that is invited
+    type Result = ();
+
+    fn handle(&mut self, msg: RejectDM, _: &mut Self::Context) -> Self::Result {
+        let RejectDM { inviter, recipient } = msg;
+
+        if self.recipient_exists(&recipient) {
+            let message = Message::RejectDM { inviter, recipient };
+            self.send_message(inviter, message, recipient, Command::RejectDM);
+        } else {
+            self.send_no_recipient(inviter, recipient);
         }
     }
 }
 
 impl Handler<ClientMessage> for ChatServer {
-    type Result = Result<(), String>;
+    type Result = ();
 
     fn handle(&mut self, msg: ClientMessage, _: &mut Self::Context) -> Self::Result {
-        if self.recipient_exists(&msg.recipient) {
-            self.send_message(msg.recipient, msg.msg.as_str(), msg.id, NewMessage);
-            Ok(())
+        let ClientMessage {
+            sender,
+            recipient,
+            msg,
+        } = msg;
+
+        if self.recipient_exists(&recipient) {
+            let message = Message::ChatMessage { message: msg };
+            self.send_message(recipient, message, sender, Command::ChatMessage);
+            self.send_message(
+                sender,
+                Message::String("Message sent.".to_string()),
+                sender,
+                Command::MessageSent,
+            );
         } else {
-            Err("Recipient no longer has a session.".to_string())
+            self.send_no_recipient(sender, recipient);
         }
     }
 }

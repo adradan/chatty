@@ -1,6 +1,5 @@
 use crate::message::{Command, SessionMessage};
 use crate::server;
-use crate::server::MessageStatus;
 use actix::prelude::*;
 use actix_web_actors::ws;
 use actix_web_actors::ws::{Message, WebsocketContext};
@@ -15,6 +14,7 @@ pub struct WsSession {
     pub name: Option<String>,
     pub heartbeat: Instant,
     pub recipient: usize,
+    pub dm_accepted: bool,
     pub addr: Addr<server::ChatServer>,
 }
 
@@ -49,41 +49,6 @@ impl Actor for WsSession {
     }
 }
 
-fn message_check(
-    res: Result<Result<(), String>, MailboxError>,
-    ctx: &mut WebsocketContext<WsSession>,
-    sender: usize,
-    success_status: MessageStatus,
-    success_message: String,
-    err_message: String,
-) {
-    // Something went horribly wrong with the chat server.
-    if let Err(_) = res {
-        ctx.stop();
-        return;
-    }
-    match res.unwrap() {
-        Ok(_) => {
-            let message = server::Message {
-                sender,
-                message: success_message,
-                status: success_status,
-            };
-            let response = serde_json::to_string(&message).unwrap();
-            ctx.text(response);
-        }
-        Err(_) => {
-            let message = server::Message {
-                sender,
-                message: err_message,
-                status: MessageStatus::NoRecipient,
-            };
-            let response = serde_json::to_string(&message).unwrap();
-            ctx.text(response);
-        }
-    }
-}
-
 impl WsSession {
     fn heartbeat(&self, ctx: &mut ws::WebsocketContext<Self>) {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
@@ -96,61 +61,31 @@ impl WsSession {
         });
     }
 
-    fn join(&mut self, recipient: usize, ctx: &mut <WsSession as Actor>::Context) {
+    fn join(&mut self, recipient: usize, _: &mut <WsSession as Actor>::Context) {
         self.recipient = recipient;
-        self.addr
-            .send(server::JoinDM {
-                id: self.id.to_owned(),
-                recipient: self.recipient.to_owned(),
-            })
-            .into_actor(self)
-            .then(|res, act, ctx| {
-                let r = act.recipient.to_owned();
-                let success_message = format!("{r}");
-                let err_message = format!("Recipient ({r}) not found");
-                message_check(
-                    res,
-                    ctx,
-                    act.id,
-                    MessageStatus::UserJoined,
-                    success_message,
-                    err_message,
-                );
-                fut::ready(())
-            })
-            .wait(ctx);
+        self.addr.do_send(server::JoinDM {
+            id: self.id.to_owned(),
+            recipient: self.recipient.to_owned(),
+        });
     }
 
-    fn send_message(&mut self, message: String, ctx: &mut <WsSession as Actor>::Context) {
-        self.addr
-            .send(server::ClientMessage {
-                id: self.id.to_owned(),
-                msg: message,
-                recipient: self.recipient.to_owned(),
-            })
-            .into_actor(self)
-            .then(|res, act, ctx| {
-                let r = act.recipient.to_owned();
-                let success_message = format!("Sent DM to: {r}");
-                let err_message = format!("Recipient ({r}) not found");
-                message_check(
-                    res,
-                    ctx,
-                    act.id,
-                    MessageStatus::MessageSent,
-                    success_message,
-                    err_message,
-                );
-                fut::ready(())
-            })
-            .wait(ctx);
+    fn send_message(&mut self, message: String, _: &mut <WsSession as Actor>::Context) {
+        self.addr.do_send(server::ClientMessage {
+            sender: self.id.to_owned(),
+            msg: message,
+            recipient: self.recipient.to_owned(),
+        });
+    }
+
+    fn invite_dm(&mut self, recipient: usize, ctx: &mut <WsSession as Actor>::Context) {
+        // self.addr.do_send(server::)
     }
 }
 
-impl Handler<server::Message> for WsSession {
+impl Handler<server::ServerMessage> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, msg: server::Message, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: server::ServerMessage, ctx: &mut Self::Context) -> Self::Result {
         let json_msg = serde_json::to_string(&msg).unwrap();
         ctx.text(json_msg);
     }
@@ -177,10 +112,13 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     Command::Join { recipient } => {
                         self.join(recipient, ctx);
                     }
+                    Command::InviteDM { recipient } => {}
+                    Command::AcceptDM { recipient } => {}
                     Command::Message { message } => {
                         self.send_message(message, ctx);
                     }
                     Command::Unknown => {}
+                    Command::RejectDM { .. } => {}
                 }
             }
             Message::Binary(_) => {

@@ -23,6 +23,7 @@ async fn get_chat(
             name: None,
             heartbeat: Instant::now(),
             recipient: 0,
+            dm_accepted: false,
             addr: srv.get_ref().clone(),
         },
         &req,

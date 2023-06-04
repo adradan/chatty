@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Command {
     Join { recipient: usize },
+    InviteDM { recipient: usize },
+    AcceptDM { recipient: usize },
+    RejectDM { recipient: usize },
     Message { message: String },
     Unknown,
 }
