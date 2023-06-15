@@ -1,5 +1,6 @@
 use crate::message::TextMessage;
 use actix::prelude::*;
+use actix_cors::Cors;
 use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_actors::ws;
 use dotenv::dotenv;
@@ -45,11 +46,12 @@ async fn main() -> io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(Cors::permissive())
             .app_data(web::Data::new(server.clone()))
             .route("/ws/", web::get().to(get_chat))
             .route("/", web::get().to(test))
     })
-    .bind("127.0.0.1:8080")?
+    .bind("0.0.0.0:3000")?
     .run()
     .await
 }
