@@ -2,11 +2,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Command {
-    Join { recipient: usize },
-    InviteDM { recipient: usize },
-    AcceptDM { recipient: usize },
-    RejectDM { recipient: usize },
-    Message { message: String },
+    Syn {
+        inviterKey: String,
+        recipient: usize,
+    },
+    SynAck {
+        inviterKey: String,
+        recipientKey: String,
+        recipient: usize,
+    },
+    Ack {
+        recipientKey: String,
+        recipient: usize,
+    },
+    Message {
+        message: String,
+    },
     Unknown,
 }
 

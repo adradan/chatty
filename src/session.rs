@@ -61,12 +61,47 @@ impl WsSession {
         });
     }
 
-    fn join(&mut self, recipient: usize, _: &mut <WsSession as Actor>::Context) {
-        self.recipient = recipient;
-        self.addr.do_send(server::JoinDM {
+    fn send_syn(
+        &mut self,
+        recipient: usize,
+        inviter_key: String,
+        _: &mut <WsSession as Actor>::Context,
+    ) {
+        self.addr.do_send(server::Syn {
             id: self.id.to_owned(),
+            recipient,
+            inviterKey: inviter_key,
+        })
+    }
+
+    fn send_synack(
+        &mut self,
+        inviter_key: String,
+        recipient_key: String,
+        recipient: usize,
+        _: &mut <WsSession as Actor>::Context,
+    ) {
+        self.recipient = recipient;
+        self.addr.do_send(server::SynAck {
+            id: self.id.to_owned(),
+            inviterKey: inviter_key,
+            recipientKey: recipient_key,
             recipient: self.recipient.to_owned(),
-        });
+        })
+    }
+
+    fn send_ack(
+        &mut self,
+        recipient_key: String,
+        recipient: usize,
+        _: &mut <WsSession as Actor>::Context,
+    ) {
+        self.recipient = recipient;
+        self.addr.do_send(server::Ack {
+            id: self.id.to_owned(),
+            recipientKey: recipient_key,
+            recipient: self.recipient.to_owned(),
+        })
     }
 
     fn send_message(&mut self, message: String, _: &mut <WsSession as Actor>::Context) {
@@ -75,10 +110,6 @@ impl WsSession {
             msg: message,
             recipient: self.recipient.to_owned(),
         });
-    }
-
-    fn invite_dm(&mut self, recipient: usize, ctx: &mut <WsSession as Actor>::Context) {
-        // self.addr.do_send(server::)
     }
 }
 
@@ -109,16 +140,29 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                 log::info!("New Text Message: {}", text);
                 println!("{:?}", command);
                 match command {
-                    Command::Join { recipient } => {
-                        self.join(recipient, ctx);
-                    }
-                    Command::InviteDM { recipient } => {}
-                    Command::AcceptDM { recipient } => {}
                     Command::Message { message } => {
                         self.send_message(message, ctx);
                     }
+                    Command::Syn {
+                        inviterKey,
+                        recipient,
+                    } => {
+                        self.send_syn(recipient, inviterKey, ctx);
+                    }
+                    Command::SynAck {
+                        inviterKey,
+                        recipientKey,
+                        recipient,
+                    } => {
+                        self.send_synack(inviterKey, recipientKey, recipient, ctx);
+                    }
+                    Command::Ack {
+                        recipientKey,
+                        recipient,
+                    } => {
+                        self.send_ack(recipientKey, recipient, ctx);
+                    }
                     Command::Unknown => {}
-                    Command::RejectDM { .. } => {}
                 }
             }
             Message::Binary(_) => {

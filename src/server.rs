@@ -5,27 +5,39 @@ use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Command {
+    Syn,
+    SynAck,
+    Ack,
     NoRecipient,
     ChatMessage,
     ChatMessageSent,
     MessageSent,
     StartedSession,
-    Join,
-    InviteDM,
-    AcceptDM,
-    RejectDM,
     Success,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(untagged)]
 pub enum Message {
-    Join { recipient: usize },
-    InviteDM { inviter: usize, recipient: usize },
-    AcceptDM { inviter: usize, recipient: usize },
-    RejectDM { inviter: usize, recipient: usize },
-    ChatMessage { message: String },
-    NoRecipient { recipient: usize },
+    Syn {
+        inviterKey: String,
+        recipient: usize,
+    },
+    SynAck {
+        inviterKey: String,
+        recipientKey: String,
+        recipient: usize,
+    },
+    Ack {
+        recipientKey: String,
+        recipient: usize,
+    },
+    ChatMessage {
+        message: String,
+    },
+    NoRecipient {
+        recipient: usize,
+    },
     String(String),
 }
 
@@ -65,29 +77,26 @@ pub struct Disconnect {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct InviteDM {
-    pub inviter: usize,
-    pub recipient: usize,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct AcceptDM {
-    pub inviter: usize,
-    pub recipient: usize,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct RejectDM {
-    pub inviter: usize,
-    pub recipient: usize,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct JoinDM {
+pub struct Syn {
     pub id: usize,
+    pub inviterKey: String,
+    pub recipient: usize,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct SynAck {
+    pub id: usize,
+    pub inviterKey: String,
+    pub recipientKey: String,
+    pub recipient: usize,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct Ack {
+    pub id: usize,
+    pub recipientKey: String,
     pub recipient: usize,
 }
 
@@ -129,7 +138,7 @@ impl ChatServer {
 
     fn send_no_recipient(&self, sender: usize, recipient: usize) {
         let message = Message::NoRecipient { recipient };
-        self.send_message(sender, message, sender, Command::NoRecipient);
+        self.send_message(sender.to_owned(), message, sender, Command::NoRecipient);
     }
 }
 
@@ -162,73 +171,64 @@ impl Handler<Disconnect> for ChatServer {
     }
 }
 
-impl Handler<JoinDM> for ChatServer {
-    // Inviter will send on being sent back the AcceptDM
-    // Recipient will send upon sending AcceptDM
+impl Handler<Syn> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: JoinDM, _ctx: &mut Self::Context) -> Self::Result {
-        let JoinDM { id, recipient } = msg;
+    fn handle(&mut self, msg: Syn, _: &mut Self::Context) -> Self::Result {
+        let Syn {
+            id,
+            inviterKey,
+            recipient,
+        } = msg;
 
         if self.recipient_exists(&recipient) {
-            let message = Message::Join { recipient };
-            self.send_message(recipient, message, id, Command::Join);
-            self.send_message(
-                id,
-                Message::String("DM Created".to_string()),
-                id,
-                Command::Join,
-            );
-        } else {
-            self.send_no_recipient(id, recipient);
+            let message = Message::Syn {
+                inviterKey,
+                recipient: recipient.clone(),
+            };
+            self.send_message(recipient, message, id, Command::Syn);
         }
     }
 }
 
-impl Handler<InviteDM> for ChatServer {
-    // Comes from person that wants to invite someone to DM
+impl Handler<SynAck> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: InviteDM, ctx: &mut Self::Context) -> Self::Result {
-        let InviteDM { inviter, recipient } = msg;
+    fn handle(&mut self, msg: SynAck, _: &mut Self::Context) -> Self::Result {
+        let SynAck {
+            id,
+            inviterKey,
+            recipientKey,
+            recipient,
+        } = msg;
 
         if self.recipient_exists(&recipient) {
-            let message = Message::InviteDM { inviter, recipient };
-            self.send_message(recipient, message, inviter, Command::InviteDM);
-        } else {
-            self.send_no_recipient(inviter, recipient);
+            let message = Message::SynAck {
+                inviterKey,
+                recipientKey,
+                recipient: recipient.clone(),
+            };
+            self.send_message(recipient, message, id, Command::SynAck);
         }
     }
 }
 
-impl Handler<AcceptDM> for ChatServer {
-    // Comes from person that is invited
+impl Handler<Ack> for ChatServer {
     type Result = ();
 
-    fn handle(&mut self, msg: AcceptDM, _: &mut Self::Context) -> Self::Result {
-        let AcceptDM { inviter, recipient } = msg;
+    fn handle(&mut self, msg: Ack, _: &mut Self::Context) -> Self::Result {
+        let Ack {
+            id,
+            recipientKey,
+            recipient,
+        } = msg;
 
         if self.recipient_exists(&recipient) {
-            let message = Message::AcceptDM { inviter, recipient };
-            self.send_message(inviter, message, recipient, Command::AcceptDM);
-        } else {
-            self.send_no_recipient(inviter, recipient);
-        }
-    }
-}
-
-impl Handler<RejectDM> for ChatServer {
-    // Comes from person that is invited
-    type Result = ();
-
-    fn handle(&mut self, msg: RejectDM, _: &mut Self::Context) -> Self::Result {
-        let RejectDM { inviter, recipient } = msg;
-
-        if self.recipient_exists(&recipient) {
-            let message = Message::RejectDM { inviter, recipient };
-            self.send_message(inviter, message, recipient, Command::RejectDM);
-        } else {
-            self.send_no_recipient(inviter, recipient);
+            let message = Message::Ack {
+                recipientKey,
+                recipient: recipient.to_owned(),
+            };
+            self.send_message(recipient, message, id, Command::Ack);
         }
     }
 }
@@ -245,9 +245,14 @@ impl Handler<ClientMessage> for ChatServer {
 
         if self.recipient_exists(&recipient) {
             let message = Message::ChatMessage { message: msg };
-            self.send_message(recipient, message, sender, Command::ChatMessage);
             self.send_message(
-                sender,
+                recipient.to_owned(),
+                message,
+                sender.to_owned(),
+                Command::ChatMessage,
+            );
+            self.send_message(
+                sender.to_owned(),
                 Message::String("Message sent.".to_string()),
                 sender,
                 Command::MessageSent,
