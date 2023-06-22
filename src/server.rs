@@ -10,7 +10,6 @@ pub enum Command {
     Ack,
     NoRecipient,
     ChatMessage,
-    ChatMessageSent,
     MessageSent,
     StartedSession,
     Success,
@@ -180,7 +179,7 @@ impl Handler<Syn> for ChatServer {
             inviterKey,
             recipient,
         } = msg;
-
+        println!("{:?}", self.recipient_exists(&recipient));
         if self.recipient_exists(&recipient) {
             let message = Message::Syn {
                 inviterKey,

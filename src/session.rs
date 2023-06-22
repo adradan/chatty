@@ -147,20 +147,23 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         inviterKey,
                         recipient,
                     } => {
-                        self.send_syn(recipient, inviterKey, ctx);
+                        let recipient_id: usize = recipient.parse().unwrap_or(0);
+                        self.send_syn(recipient_id, inviterKey, ctx);
                     }
                     Command::SynAck {
                         inviterKey,
                         recipientKey,
                         recipient,
                     } => {
-                        self.send_synack(inviterKey, recipientKey, recipient, ctx);
+                        let recipient_id: usize = recipient.parse().unwrap_or(0);
+                        self.send_synack(inviterKey, recipientKey, recipient_id, ctx);
                     }
                     Command::Ack {
                         recipientKey,
                         recipient,
                     } => {
-                        self.send_ack(recipientKey, recipient, ctx);
+                        let recipient_id: usize = recipient.parse().unwrap_or(0);
+                        self.send_ack(recipientKey, recipient_id, ctx);
                     }
                     Command::Unknown => {}
                 }

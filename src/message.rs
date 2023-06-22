@@ -1,19 +1,19 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Command {
     Syn {
         inviterKey: String,
-        recipient: usize,
+        recipient: String,
     },
     SynAck {
         inviterKey: String,
         recipientKey: String,
-        recipient: usize,
+        recipient: String,
     },
     Ack {
         recipientKey: String,
-        recipient: usize,
+        recipient: String,
     },
     Message {
         message: String,
