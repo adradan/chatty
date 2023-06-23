@@ -20,22 +20,22 @@ pub enum Command {
 pub enum Message {
     Syn {
         inviterKey: String,
-        recipient: usize,
+        recipient: String,
     },
     SynAck {
         inviterKey: String,
         recipientKey: String,
-        recipient: usize,
+        recipient: String,
     },
     Ack {
         recipientKey: String,
-        recipient: usize,
+        recipient: String,
     },
     ChatMessage {
         message: String,
     },
     NoRecipient {
-        recipient: usize,
+        recipient: String,
     },
     String(String),
 }
@@ -57,7 +57,7 @@ pub struct Session {
 #[derive(Message, Deserialize, Serialize, Debug)]
 #[rtype(result = "()")]
 pub struct ServerMessage {
-    pub sender: usize,
+    pub sender: String,
     pub message: Message,
     pub command: Command,
 }
@@ -124,7 +124,7 @@ impl ChatServer {
     fn send_message(&self, recipient: usize, message: Message, sender: usize, command: Command) {
         if let Some(r) = self.sessions.get(&recipient) {
             r.do_send(ServerMessage {
-                sender,
+                sender: sender.to_string(),
                 message,
                 command,
             });
@@ -136,7 +136,9 @@ impl ChatServer {
     }
 
     fn send_no_recipient(&self, sender: usize, recipient: usize) {
-        let message = Message::NoRecipient { recipient };
+        let message = Message::NoRecipient {
+            recipient: recipient.to_string(),
+        };
         self.send_message(sender.to_owned(), message, sender, Command::NoRecipient);
     }
 }
@@ -183,7 +185,7 @@ impl Handler<Syn> for ChatServer {
         if self.recipient_exists(&recipient) {
             let message = Message::Syn {
                 inviterKey,
-                recipient: recipient.clone(),
+                recipient: recipient.to_string(),
             };
             self.send_message(recipient, message, id, Command::Syn);
         }
@@ -205,7 +207,7 @@ impl Handler<SynAck> for ChatServer {
             let message = Message::SynAck {
                 inviterKey,
                 recipientKey,
-                recipient: recipient.clone(),
+                recipient: recipient.to_string(),
             };
             self.send_message(recipient, message, id, Command::SynAck);
         }
@@ -225,7 +227,7 @@ impl Handler<Ack> for ChatServer {
         if self.recipient_exists(&recipient) {
             let message = Message::Ack {
                 recipientKey,
-                recipient: recipient.to_owned(),
+                recipient: recipient.to_string(),
             };
             self.send_message(recipient, message, id, Command::Ack);
         }
