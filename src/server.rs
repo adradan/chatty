@@ -2,6 +2,14 @@ use actix::prelude::*;
 use rand::{self, rngs::ThreadRng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+fn get_unix() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_millis(0))
+        .as_millis()
+}
 
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Command {
@@ -33,6 +41,7 @@ pub enum Message {
     },
     ChatMessage {
         message: String,
+        timestamp: u128,
     },
     NoRecipient {
         recipient: String,
@@ -42,7 +51,10 @@ pub enum Message {
 
 impl From<String> for Message {
     fn from(value: String) -> Self {
-        Message::ChatMessage { message: value }
+        Message::ChatMessage {
+            message: value,
+            timestamp: get_unix(),
+        }
     }
 }
 
@@ -245,7 +257,10 @@ impl Handler<ClientMessage> for ChatServer {
         } = msg;
 
         if self.recipient_exists(&recipient) {
-            let message = Message::ChatMessage { message: msg };
+            let message = Message::ChatMessage {
+                message: msg,
+                timestamp: get_unix(),
+            };
             self.send_message(
                 recipient.to_owned(),
                 message,
