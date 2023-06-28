@@ -5,8 +5,8 @@ use actix_web::{web, App, Error, HttpRequest, HttpResponse, HttpServer, Responde
 use actix_web_actors::ws;
 use dotenv::dotenv;
 use session::WsSession;
-use std::io;
 use std::time::Instant;
+use std::{env, io};
 
 mod message;
 mod server;
@@ -43,6 +43,9 @@ async fn main() -> io::Result<()> {
     log::info!("Starting logger.");
 
     let server = server::ChatServer::new().start();
+    let port = env::var("BACKEND_PORT").unwrap_or("3000".to_string());
+
+    let url = format!("0.0.0.0:{}", port);
 
     HttpServer::new(move || {
         App::new()
@@ -51,7 +54,7 @@ async fn main() -> io::Result<()> {
             .route("/ws/", web::get().to(get_chat))
             .route("/", web::get().to(test))
     })
-    .bind("0.0.0.0:3000")?
+    .bind(url)?
     .run()
     .await
 }
