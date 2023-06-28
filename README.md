@@ -1,7 +1,19 @@
-# Simple WebSocket Chat Application
+# Chatty Backend
+
 Heavily influenced by [Actix Chat Example](https://github.com/actix/examples/tree/master/websockets/chat)
 
-## Goals:
+## Current Deployment
+
+insert deployment url here.
+
+## About
+
+This repo serves as the backend for the [chatty frontend](https://github.com/adradan/chatty-frontend).
+
+Built using Rust and Actix, it servers as the central server that manages each WebSocket connection and sends along
+messages across users. The server has no access to a user's messages or private keys.
+
+## Goals
 
 - Deployed with some Frontend
 - End-to-End Encryption
