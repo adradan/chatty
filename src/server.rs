@@ -19,6 +19,7 @@ pub enum Command {
     NoRecipient,
     ChatMessage,
     MessageSent,
+    ResetID,
     StartedSession,
     Success,
 }
@@ -119,6 +120,12 @@ pub struct ClientMessage {
     pub recipient: usize,
 }
 
+#[derive(Message)]
+#[rtype(usize)]
+pub struct ResetID {
+    pub id: usize,
+}
+
 #[derive(Debug)]
 pub struct ChatServer {
     sessions: HashMap<usize, Recipient<ServerMessage>>,
@@ -173,6 +180,25 @@ impl Handler<Connect> for ChatServer {
             Command::StartedSession,
         );
         id
+    }
+}
+
+impl Handler<ResetID> for ChatServer {
+    type Result = usize;
+
+    fn handle(&mut self, msg: ResetID, ctx: &mut Self::Context) -> Self::Result {
+        let new_id = self.rng.gen::<usize>();
+        if let Some(v) = self.sessions.remove(&msg.id) {
+            self.sessions.insert(new_id.to_owned(), v);
+            self.send_message(
+                new_id.to_owned(),
+                Message::String("New Id created.".to_string()),
+                new_id.to_owned(),
+                Command::ResetID,
+            );
+            return new_id;
+        }
+        msg.id
     }
 }
 

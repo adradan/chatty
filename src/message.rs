@@ -18,6 +18,9 @@ pub enum Command {
     Message {
         message: String,
     },
+    ResetId {
+        id: String,
+    },
     Unknown,
 }
 

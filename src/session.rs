@@ -111,6 +111,25 @@ impl WsSession {
             recipient: self.recipient.to_owned(),
         });
     }
+
+    fn reset_id(&mut self, ctx: &mut <WsSession as Actor>::Context) {
+        self.recipient = 0;
+        self.addr
+            .send(server::ResetID {
+                id: self.id.to_owned(),
+            })
+            .into_actor(self)
+            .then(|res, act, ctx| {
+                match res {
+                    Ok(res) => {
+                        act.id = res;
+                    }
+                    _ => ctx.stop(),
+                }
+                fut::ready(())
+            })
+            .wait(ctx);
+    }
 }
 
 impl Handler<server::ServerMessage> for WsSession {
@@ -166,6 +185,12 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                         self.send_ack(recipientKey, recipient_id, ctx);
                     }
                     Command::Unknown => {}
+                    Command::ResetId { id } => {
+                        if id != self.id.to_string() {
+                            return;
+                        }
+                        self.reset_id(ctx);
+                    }
                 }
             }
             Message::Binary(_) => {
