@@ -33,7 +33,7 @@ async fn get_chat(
 }
 
 async fn test() -> impl Responder {
-    HttpResponse::Ok().body("Hello, World!")
+    HttpResponse::Ok().body("Hello, World!!!!!")
 }
 
 #[actix_web::main]
