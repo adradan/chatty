@@ -11,7 +11,7 @@ RUN rm src/*.rs
 
 ADD . ./
 
-RUN rm -rf ./target/release/deps/chatty-backend*
+RUN rm -rf ./target
 RUN cargo build --release
 
 FROM debian:buster-slim
